@@ -1,100 +1,44 @@
-sk#include <iostream>
+#include <iostream>
 #include <cstdlib>
-#include <cmath>
-#include <cstring>
 #include <ctime>
+#include <vector>
+#include <limits>
 
-const int MAX_LEVEL = 16; // 最大层数
-
-// 节点定义
-struct Node {
+class Node {
+public:
     int value;
-    Node **forward; // 指向下一个节点的指针数组
+    std::vector<Node*> forward;
 
-    Node(int value, int level) {
-        this->value = value;
-        // 创建一个指针数组，每层对应一个指针
-        forward = new Node*[level + 1];
-        memset(forward, 0, sizeof(Node*) * (level + 1));
-    }
-    ~Node() {
-        delete[] forward;
-    }
+    Node(int val, int level) : value(val), forward(level, nullptr) {}
 };
 
-// 跳表定义
 class SkipList {
 private:
-    Node *header;  // 跳表头节点
-    int level;     // 当前跳表的层数
-    float probability; // 控制是否向上建立索引的概率
+    int maxLevel;
+    float probability;
+    int currentLevel;
+    Node* head;
 
-    // 生成随机层数
+    // 随机生成一个层数
     int randomLevel() {
-        int lvl = 1;
-        while ((std::rand() / double(RAND_MAX)) < probability && lvl < MAX_LEVEL) {
-            lvl++;
-        }
-        return lvl;
+        int level = 1;
+        while (static_cast<float>(rand()) / RAND_MAX < probability && level < maxLevel)
+            level++;
+        return level;
     }
 
 public:
-    SkipList(float prob = 0.5) {
-        this->level = 1;
-        this->probability = prob;
-        // 创建一个头节点，值为-1（或其他无效值），层数为MAX_LEVEL
-        header = new Node(-1, MAX_LEVEL);
+    SkipList(int maxLvl, float prob) : maxLevel(maxLvl), probability(prob), currentLevel(1) {
+        head = new Node(-1, maxLevel);  // 头节点
     }
 
-    ~SkipList() {
-        Node *current = header;
-        while (current) {
-            Node *next = current->forward[0];
-            delete current;
-            current = next;
-        }
-    }
-
-    // 插入值
+    // 插入一个元素
     void insert(int value) {
-        Node *current = header;
-        Node *update[MAX_LEVEL + 1];
-        memset(update, 0, sizeof(Node*) * (MAX_LEVEL + 1));
+        std::vector<Node*> update(maxLevel, nullptr);
+        Node* current = head;
 
-        // 查找插入位置
-        for (int i = level; i >= 0; i--) {
-            while (current->forward[i] != nullptr && current->forward[i]->value < value) {
-                current = current->forward[i];
-            }
-            update[i] = current;
-        }
-
-        // 插入新节点
-        int lvl = randomLevel();
-        if (lvl > level) {
-            for (int i = level + 1; i <= lvl; i++) {
-                update[i] = header;
-            }
-            level = lvl;
-        }
-
-        Node *newNode = new Node(value, lvl);
-        for (int i = 0; i <= lvl; i++) {
-            newNode->forward[i] = update[i]->forward[i];
-            update[i]->forward[i] = newNode;
-        }
-
-        std::cout << "Inserted value " << value << " with level " << lvl << std::endl;
-    }
-
-    // 删除值
-    void remove(int value) {
-        Node *current = header;
-        Node *update[MAX_LEVEL + 1];
-        memset(update, 0, sizeof(Node*) * (MAX_LEVEL + 1));
-
-        // 查找要删除的位置
-        for (int i = level; i >= 0; i--) {
+        // 找到每一层的插入位置
+        for (int i = currentLevel - 1; i >= 0; i--) {
             while (current->forward[i] != nullptr && current->forward[i]->value < value) {
                 current = current->forward[i];
             }
@@ -102,60 +46,95 @@ public:
         }
 
         current = current->forward[0];
+
+        // 如果值不存在则插入新节点
+        if (current == nullptr || current->value != value) {
+            int newLevel = randomLevel();
+
+            if (newLevel > currentLevel) {
+                for (int i = currentLevel; i < newLevel; i++) {
+                    update[i] = head;
+                }
+                currentLevel = newLevel;
+            }
+
+            Node* newNode = new Node(value, newLevel);
+            for (int i = 0; i < newLevel; i++) {
+                newNode->forward[i] = update[i]->forward[i];
+                update[i]->forward[i] = newNode;
+            }
+        }
+    }
+
+    // 删除一个元素
+    void remove(int value) {
+        std::vector<Node*> update(maxLevel, nullptr);
+        Node* current = head;
+
+        for (int i = currentLevel - 1; i >= 0; i--) {
+            while (current->forward[i] != nullptr && current->forward[i]->value < value) {
+                current = current->forward[i];
+            }
+            update[i] = current;
+        }
+
+        current = current->forward[0];
+
         if (current != nullptr && current->value == value) {
-            for (int i = 0; i <= level; i++) {
+            for (int i = 0; i < currentLevel; i++) {
                 if (update[i]->forward[i] != current) break;
                 update[i]->forward[i] = current->forward[i];
             }
 
             delete current;
 
-            // 更新层数
-            while (level > 1 && header->forward[level] == nullptr) {
-                level--;
+            while (currentLevel > 1 && head->forward[currentLevel - 1] == nullptr) {
+                currentLevel--;
             }
-
-            std::cout << "Removed value " << value << std::endl;
         }
     }
 
-    // 查找值
+    // 查询一个元素
     bool search(int value) {
-        Node *current = header;
-        for (int i = level; i >= 0; i--) {
+        Node* current = head;
+        for (int i = currentLevel - 1; i >= 0; i--) {
             while (current->forward[i] != nullptr && current->forward[i]->value < value) {
                 current = current->forward[i];
             }
         }
-
         current = current->forward[0];
-        if (current != nullptr && current->value == value) {
-            std::cout << "Found value " << value << std::endl;
-            return true;
-        }
-        std::cout << "Value " << value << " not found" << std::endl;
-        return false;
+
+        return current != nullptr && current->value == value;
     }
 
     // 打印跳表
-    void display() {
-        for (int i = level; i >= 0; i--) {
-            Node *current = header->forward[i];
-            std::cout << "Level " << i << ": ";
-            while (current != nullptr) {
-                std::cout << current->value << " ";
-                current = current->forward[i];
+    void print() {
+        for (int i = 0; i < currentLevel; i++) {
+            Node* node = head->forward[i];
+            std::cout << "Level " << i + 1 << ": ";
+            while (node != nullptr) {
+                std::cout << node->value << " ";
+                node = node->forward[i];
             }
-            std::cout << std::endl;
+            std::cout << "\n";
+        }
+    }
+
+    // 析构函数
+    ~SkipList() {
+        Node* current = head;
+        while (current != nullptr) {
+            Node* next = current->forward[0];
+            delete current;
+            current = next;
         }
     }
 };
 
 int main() {
-    // 初始化随机数种子
-    std::srand(std::time(nullptr));
+    srand(time(nullptr));
 
-    SkipList skiplist;
+    SkipList skiplist(6, 0.5);
 
     skiplist.insert(3);
     skiplist.insert(6);
@@ -163,16 +142,16 @@ int main() {
     skiplist.insert(9);
     skiplist.insert(12);
     skiplist.insert(19);
-    skiplist.insert(17);
-    skiplist.insert(26);
-    skiplist.insert(21);
-    skiplist.insert(25);
 
-    skiplist.display();
+    std::cout << "Skip List after insertions:\n";
+    skiplist.print();
 
-    skiplist.search(19);
-    skiplist.remove(19);
-    skiplist.search(19);
+    std::cout << "Search for 6: " << (skiplist.search(6) ? "Found" : "Not found") << "\n";
+    std::cout << "Search for 15: " << (skiplist.search(15) ? "Found" : "Not found") << "\n";
+
+    skiplist.remove(6);
+    std::cout << "Skip List after deletion of 6:\n";
+    skiplist.print();
 
     return 0;
 }
